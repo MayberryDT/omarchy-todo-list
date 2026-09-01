@@ -5,6 +5,8 @@ check off, search done items, and restore them.
 
 No accounts. No cloud. Just a JSON file on disk.
 
+![Preview](preview.png)
+
 ## Install
 
 ```bash
