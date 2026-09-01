@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "io.zet.todo-list",
+  "name": "To-Do List",
+  "version": "1.1.0",
+  "author": "Tyler Mayberry",
+  "license": "MIT",
+  "description": "A simple persistent to-do list in the Omarchy bar.",
+  "kinds": ["bar-widget"],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "To-Do List",
+    "description": "Add and check off to-dos from a bar popup.",
+    "category": "Productivity",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}
