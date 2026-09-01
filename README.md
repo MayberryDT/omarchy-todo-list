@@ -35,7 +35,7 @@ omarchy bar move io.zet.todo-list
 - **Up / Down** or **j / k** move
 - **Enter** or **Space** checks off (Open) or restores (Done)
 - **x** or **Delete** removes the selected row
-- **Left / Right** switches Open and Done
+- **Left / Right** switches Open and Done (also from an empty composer)
 - **Escape** goes back to the field, then closes
 - **Tab** moves to the next bar panel
 - **/** focuses the field again
