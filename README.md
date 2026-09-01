@@ -28,6 +28,18 @@ omarchy bar move io.zet.todo-list
 - **Done** — search completed items; click a row to restore it to Open
 - **Hover a row** and click **X** to delete
 
+## Keyboard
+
+- Type a to-do and press **Enter**
+- **Down** jumps to the list; **Up** from the first row returns to the field
+- **Up / Down** or **j / k** move
+- **Enter** or **Space** checks off (Open) or restores (Done)
+- **x** or **Delete** removes the selected row
+- **Left / Right** switches Open and Done
+- **Escape** goes back to the field, then closes
+- **Tab** moves to the next bar panel
+- **/** focuses the field again
+
 ## Data
 
 To-dos are stored at:
