@@ -8,6 +8,7 @@ Item {
   property var item: ({})
   property string filter: "open"
   property int appearIndex: 0
+  property bool selected: false
   property color foreground: Color.foreground
   property color mutedColor: Qt.darker(foreground, 1.6)
   property string fontFamily: Style.font.family
@@ -121,7 +122,7 @@ Item {
     anchors.fill: parent
     radius: Style.cornerRadius
     color: Color.accent
-    opacity: hover.containsMouse && !root.busy ? 0.08 : 0
+    opacity: (hover.containsMouse || root.selected) && !root.busy ? 0.08 : 0
     Behavior on opacity { NumberAnimation { duration: 110 } }
   }
 
@@ -130,6 +131,10 @@ Item {
     anchors.fill: parent
     hoverEnabled: true
     acceptedButtons: Qt.NoButton
+    onContainsMouseChanged: {
+      if (containsMouse && root.panel && typeof root.panel.selectIndex === "function")
+        root.panel.selectIndex(root.appearIndex)
+    }
   }
 
   Row {
@@ -207,7 +212,7 @@ Item {
       font.family: root.fontFamily
       font.pixelSize: Style.font.body
       anchors.verticalCenter: parent.verticalCenter
-      opacity: hover.containsMouse && !root.busy ? 1 : 0
+      opacity: (hover.containsMouse || root.selected) && !root.busy ? 1 : 0
       Behavior on opacity { NumberAnimation { duration: 120 } }
 
       MouseArea {

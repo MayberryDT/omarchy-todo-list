@@ -19,6 +19,8 @@ Panel {
   property string searchQuery: ""
   property string lastAddedId: ""
   property string lastPersisted: ""
+  property int selectedIndex: -1
+  property bool cursorActive: false
 
   readonly property var barIdentity: hostWidget || root
   readonly property color foreground: bar ? bar.foreground : Color.foreground
@@ -73,6 +75,7 @@ Panel {
       if (found < 0) visibleModel.insert(i, rowDict(rows[i]))
       else if (found !== i) visibleModel.move(found, i, 1)
     }
+    clampSelection()
   }
 
   function playSound(kind) {
@@ -275,9 +278,7 @@ Panel {
 
   function open() {
     root.controller.show()
-    Qt.callLater(function() {
-      if (addField) addField.forceActiveFocus()
-    })
+    Qt.callLater(function() { root.focusField() })
   }
 
   function close() { root.controller.hide() }
@@ -287,6 +288,89 @@ Panel {
     if (root.bar && typeof root.bar.switchPanelFrom === "function")
       return root.bar.switchPanelFrom(root.barIdentity, direction)
     return false
+  }
+
+  function focusField() {
+    cursorActive = false
+    selectedIndex = -1
+    if (addField) addField.forceActiveFocus()
+  }
+
+  function focusList(index) {
+    if (visibleModel.count === 0) {
+      focusField()
+      return
+    }
+    var next = Math.max(0, Math.min(index, visibleModel.count - 1))
+    cursorActive = true
+    selectedIndex = next
+    if (keyCatcher) keyCatcher.forceActiveFocus()
+    ensureSelectedVisible()
+  }
+
+  function selectIndex(index) {
+    if (index < 0 || index >= visibleModel.count) return
+    cursorActive = true
+    selectedIndex = index
+    ensureSelectedVisible()
+  }
+
+  function clampSelection() {
+    if (visibleModel.count === 0) {
+      if (cursorActive) focusField()
+      return
+    }
+    if (!cursorActive) return
+    if (selectedIndex < 0) selectedIndex = 0
+    if (selectedIndex >= visibleModel.count) selectedIndex = visibleModel.count - 1
+    ensureSelectedVisible()
+  }
+
+  function ensureSelectedVisible() {
+    if (!cursorActive || selectedIndex < 0 || !rowRepeater || !listFlick) return
+    var row = rowRepeater.itemAt(selectedIndex)
+    if (!row) return
+    var y = row.y
+    var top = listFlick.contentY
+    var bottom = top + listFlick.height
+    if (y < top) listFlick.contentY = Math.max(0, y)
+    else if (y + row.height > bottom)
+      listFlick.contentY = Math.max(0, y + row.height - listFlick.height)
+  }
+
+  function moveCursor(dx, dy) {
+    if (dx !== 0) {
+      root.filter = root.filter === "open" ? "done" : "open"
+      return
+    }
+    if (dy === 0) return
+    if (!cursorActive) {
+      focusList(dy > 0 ? 0 : visibleModel.count - 1)
+      return
+    }
+    var next = selectedIndex + dy
+    if (next < 0) {
+      focusField()
+      return
+    }
+    if (next >= visibleModel.count) next = visibleModel.count - 1
+    selectedIndex = next
+    ensureSelectedVisible()
+  }
+
+  function selectedRow() {
+    if (!cursorActive || selectedIndex < 0 || !rowRepeater) return null
+    return rowRepeater.itemAt(selectedIndex)
+  }
+
+  function activateCursor() {
+    var row = selectedRow()
+    if (row) row.activate()
+  }
+
+  function deleteSelected() {
+    var row = selectedRow()
+    if (row) row.begin("delete")
   }
 
   Process {
@@ -351,8 +435,24 @@ Panel {
       id: keyCatcher
       anchors.fill: parent
       blocked: addField.activeFocus
-      onCloseRequested: root.close()
+      onCloseRequested: {
+        if (root.cursorActive) root.focusField()
+        else root.close()
+      }
       onTabRequested: function(direction) { root.switchPanel(direction) }
+      onMoveRequested: function(dx, dy) { root.moveCursor(dx, dy) }
+      onActivateRequested: root.activateCursor()
+      onDeleteRequested: root.deleteSelected()
+      onTextKey: function(t) {
+        if (t === "[") root.filter = "open"
+        else if (t === "]") root.filter = "done"
+        else if (t === "/") root.focusField()
+      }
+      Keys.onDeletePressed: function(event) {
+        if (keyCatcher.blocked) return
+        root.deleteSelected()
+        event.accepted = true
+      }
 
       Item {
         anchors.fill: parent
@@ -475,6 +575,20 @@ Panel {
             placeholderText: root.filter === "done" ? "Search done" : "Add a to-do"
             font.pixelSize: Style.font.bodySmall
             verticalPadding: Style.space(6)
+            Keys.priority: Keys.BeforeItem
+            Keys.onPressed: function(event) {
+              if (event.key === Qt.Key_Down) {
+                root.focusList(root.cursorActive && root.selectedIndex >= 0 ? root.selectedIndex : 0)
+                event.accepted = true
+              } else if (event.key === Qt.Key_Escape) {
+                if (text !== "") text = ""
+                else root.close()
+                event.accepted = true
+              } else if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
+                root.switchPanel((event.modifiers & Qt.ShiftModifier) || event.key === Qt.Key_Backtab ? -1 : 1)
+                event.accepted = true
+              }
+            }
             onTextChanged: {
               if (root.filter === "done") root.searchQuery = text
             }
@@ -520,6 +634,7 @@ Panel {
             }
 
             Repeater {
+              id: rowRepeater
               model: visibleModel
 
               delegate: TodoRow {
@@ -542,6 +657,7 @@ Panel {
                 })
                 filter: root.filter
                 appearIndex: index
+                selected: root.cursorActive && root.selectedIndex === index
                 foreground: root.foreground
                 mutedColor: root.mutedColor
                 fontFamily: root.fontFamily
