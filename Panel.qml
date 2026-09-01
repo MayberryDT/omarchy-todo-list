@@ -340,7 +340,7 @@ Panel {
 
   function moveCursor(dx, dy) {
     if (dx !== 0) {
-      root.filter = root.filter === "open" ? "done" : "open"
+      root.filter = dx < 0 ? "open" : "done"
       return
     }
     if (dy === 0) return
@@ -586,6 +586,12 @@ Panel {
                 event.accepted = true
               } else if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
                 root.switchPanel((event.modifiers & Qt.ShiftModifier) || event.key === Qt.Key_Backtab ? -1 : 1)
+                event.accepted = true
+              } else if (text === "" && event.key === Qt.Key_Left) {
+                root.filter = "open"
+                event.accepted = true
+              } else if (text === "" && event.key === Qt.Key_Right) {
+                root.filter = "done"
                 event.accepted = true
               }
             }
