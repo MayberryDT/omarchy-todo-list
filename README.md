@@ -8,7 +8,7 @@ No accounts. No cloud. Just a JSON file on disk.
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/YOUR_GITHUB_USER/omarchy-todo-list.git --enable
+omarchy plugin add https://github.com/MayberryDT/omarchy-todo-list.git --enable
 omarchy restart shell
 ```
 
