@@ -158,6 +158,7 @@ Item {
         id: checkText
         anchors.centerIn: parent
         text: root.doneNow || root.doneTab ? "󰄲" : "󰄱"
+        textFormat: Text.PlainText
         color: root.busy && root.pendingAction === "complete"
           ? Color.accent
           : (root.doneNow || root.doneTab ? root.mutedColor : root.foreground)
@@ -179,6 +180,7 @@ Item {
       id: labelText
       width: Math.max(40, parent.width - parent.spacing * 3 - checkMark.width - (dateText.visible ? dateText.implicitWidth : 0) - deleteText.implicitWidth)
       text: root.item && root.item.text ? root.item.text : ""
+      textFormat: Text.PlainText
       color: root.doneNow || root.doneTab ? root.mutedColor : root.foreground
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall
@@ -199,6 +201,7 @@ Item {
       id: dateText
       visible: root.doneTab
       text: root.panel && root.item ? root.panel.historyLabel(root.item) : ""
+      textFormat: Text.PlainText
       color: root.mutedColor
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
@@ -208,6 +211,7 @@ Item {
     Text {
       id: deleteText
       text: "󰅖"
+      textFormat: Text.PlainText
       color: root.mutedColor
       font.family: root.fontFamily
       font.pixelSize: Style.font.body

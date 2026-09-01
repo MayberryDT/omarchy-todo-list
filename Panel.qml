@@ -29,6 +29,9 @@ Panel {
   readonly property string storeDir: (Quickshell.env("HOME") || "") + "/.config/omarchy/todo-list"
   readonly property string storePath: storeDir + "/items.json"
   readonly property int historyCap: 100
+  readonly property int itemCap: 200
+  readonly property int textCap: 500
+  readonly property int idCap: 64
   readonly property int openCount: items.length
   readonly property var visibleItems: computeVisible(filter, items, history, searchQuery)
   readonly property string emptyText: emptyCopy(filter, items, history, searchQuery)
@@ -36,6 +39,12 @@ Panel {
   readonly property string completeSoundPath: soundDir + "/complete.wav"
   readonly property string addSoundPath: soundDir + "/add.wav"
   readonly property string deleteSoundPath: soundDir + "/delete.wav"
+  readonly property string storeHelper: {
+    var url = Qt.resolvedUrl("scripts/store.py").toString()
+    if (url.indexOf("file://") === 0)
+      return decodeURIComponent(url.slice(7))
+    return url
+  }
 
   onFilterChanged: {
     searchQuery = ""
@@ -90,15 +99,29 @@ Panel {
     return Date.now().toString(36) + "-" + Math.floor(Math.random() * 1e9).toString(36)
   }
 
+  function clipText(value) {
+    var text = String(value || "").replace(/\0/g, "").trim()
+    if (text.length > textCap) return text.slice(0, textCap)
+    return text
+  }
+
+  function clipId(value) {
+    var id = String(value || "").replace(/\0/g, "")
+    if (id.length > idCap) return id.slice(0, idCap)
+    return id
+  }
+
   function normalizeItem(item, fallbackDone) {
     if (!item || typeof item.text !== "string") return null
-    var text = String(item.text).trim()
+    var text = clipText(item.text)
     if (!text) return null
     var createdAt = Number(item.createdAt)
     var completedAt = Number(item.completedAt)
     var reason = item.reason === "dismissed" ? "dismissed" : "completed"
+    var id = clipId(item.id || newId())
+    if (!id) return null
     return {
-      id: String(item.id || newId()),
+      id: id,
       text: text,
       done: item.done === true || fallbackDone === true,
       createdAt: isFinite(createdAt) && createdAt > 0 ? createdAt : Date.now(),
@@ -134,17 +157,17 @@ Panel {
       var histSource = parsed && Array.isArray(parsed.history) ? parsed.history : []
       var next = []
       var nextHist = []
-      for (var i = 0; i < source.length; i++) {
+      for (var i = 0; i < source.length && next.length < itemCap; i++) {
         var item = normalizeItem(source[i], false)
         if (!item) continue
         if (item.done) nextHist.push(item)
         else next.push(item)
       }
-      for (var h = 0; h < histSource.length; h++) {
+      for (var h = 0; h < histSource.length && nextHist.length < historyCap; h++) {
         var archived = normalizeItem(histSource[h], true)
         if (archived) nextHist.push(archived)
       }
-      items = next
+      items = next.slice(0, itemCap)
       history = capHistory(nextHist)
     } catch (error) {
       items = []
@@ -167,11 +190,14 @@ Panel {
     if (!loaded) return
     var text = JSON.stringify(snapshot(), null, 2) + "\n"
     lastPersisted = text
-    storeFile.setText(text)
+    storeSave.payload = text
+    storeSave.stdinEnabled = true
+    storeSave.running = false
+    Qt.callLater(function() { storeSave.running = true })
   }
 
   function addItem(text) {
-    var trimmed = String(text || "").trim()
+    var trimmed = clipText(text)
     if (!trimmed) return false
     var id = newId()
     lastAddedId = id
@@ -184,6 +210,7 @@ Panel {
       completedAt: 0,
       reason: "completed"
     })
+    if (next.length > itemCap) next = next.slice(0, itemCap)
     items = next
     persist()
     syncVisible()
@@ -374,22 +401,39 @@ Panel {
   }
 
   Process {
-    id: ensureDir
-    command: ["bash", "-c", "mkdir -p \"$1\"; f=\"$1/items.json\"; [[ -f \"$f\" ]] || printf '{ \"version\": 1, \"items\": [], \"history\": [] }\\n' > \"$f\"", "todo-list-init", root.storeDir]
-    running: true
-    onExited: storeFile.reload()
+    id: storeLoad
+    command: ["/usr/bin/python3", root.storeHelper, "load", root.storeDir]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.applyText(text)
+    }
+    onExited: function(code) {
+      if (code !== 0) root.applyText("{}")
+    }
   }
 
-  FileView {
-    id: storeFile
-    path: root.storePath
-    watchChanges: true
-    printErrors: false
-    atomicWrites: true
-    onLoaded: root.applyText(text())
-    onLoadFailed: root.applyText("{}")
-    onFileChanged: reload()
+  Process {
+    id: storeSave
+    property string payload: ""
+    stdinEnabled: true
+    command: ["/usr/bin/python3", root.storeHelper, "save", root.storeDir]
+    onStarted: {
+      write(payload)
+      stdinEnabled = false
+    }
   }
+
+  Timer {
+    interval: 2000
+    running: true
+    repeat: true
+    onTriggered: {
+      if (!storeSave.running && !storeLoad.running)
+        storeLoad.running = true
+    }
+  }
+
+  Component.onCompleted: storeLoad.running = true
 
   ListModel {
     id: visibleModel
@@ -417,7 +461,13 @@ Panel {
     function show(): void { root.open() }
     function hide(): void { root.close() }
     function toggle(): void { root.toggle() }
-    function dump(): string { return JSON.stringify(root.snapshot()) }
+    function dump(): string {
+      return JSON.stringify({
+        version: 1,
+        openCount: root.items.length,
+        historyCount: root.history.length
+      })
+    }
     function add(text: string): string { return root.addItem(text) ? "ok" : "empty" }
   }
 
@@ -476,6 +526,7 @@ Panel {
 
               Text {
                 text: "TO-DOS"
+                textFormat: Text.PlainText
                 color: root.mutedColor
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
@@ -485,6 +536,7 @@ Panel {
 
               Text {
                 text: root.openCount === 1 ? "1 open" : root.openCount + " open"
+                textFormat: Text.PlainText
                 color: root.foreground
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.bodySmall
@@ -528,6 +580,7 @@ Panel {
                     id: openLabel
                     anchors.centerIn: parent
                     text: "Open"
+                    textFormat: Text.PlainText
                     color: root.filter === "open" ? root.foreground : root.mutedColor
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
@@ -551,6 +604,7 @@ Panel {
                     id: doneLabel
                     anchors.centerIn: parent
                     text: "Done"
+                    textFormat: Text.PlainText
                     color: root.filter === "done" ? root.foreground : root.mutedColor
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
@@ -575,6 +629,7 @@ Panel {
             placeholderText: root.filter === "done" ? "Search done" : "Add a to-do"
             font.pixelSize: Style.font.bodySmall
             verticalPadding: Style.space(6)
+            maximumLength: root.textCap
             Keys.priority: Keys.BeforeItem
             Keys.onPressed: function(event) {
               if (event.key === Qt.Key_Down) {
@@ -596,7 +651,7 @@ Panel {
               }
             }
             onTextChanged: {
-              if (root.filter === "done") root.searchQuery = text
+              if (root.filter === "done") root.searchQuery = clipText(text)
             }
             onAccepted: {
               if (root.filter === "done") return
@@ -629,6 +684,7 @@ Panel {
             Text {
               width: parent.width
               text: root.emptyText
+              textFormat: Text.PlainText
               color: root.mutedColor
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
