@@ -26,6 +26,8 @@ omarchy bar move io.zet.todo-list
 - **Open** — type a to-do and press Enter
 - **Check off** — pop + sound, item moves to Done
 - **Done** — search completed items; click a row to restore it to Open
+- **Edit** — right-click a row, edit its text, then press Enter to save. Escape or clicking elsewhere cancels. Empty edits are not saved.
+- **Reorder** — drag the body/text of an Open row to the insertion line and release. Hold near the top or bottom to scroll. Dropping outside the list cancels. The order is saved on release.
 - **Hover a row** and click **X** to delete
 
 ## Keyboard

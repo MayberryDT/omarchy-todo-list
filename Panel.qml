@@ -21,6 +21,18 @@ Panel {
   property string lastPersisted: ""
   property int selectedIndex: -1
   property bool cursorActive: false
+  property string editingId: ""
+  property string dragId: ""
+  property int dragSlot: -1
+  property real dragPointerY: 0
+  readonly property Item reorderViewport: listFlick
+
+  onOpenedChanged: {
+    if (!opened) {
+      editingId = ""
+      cancelDrag()
+    }
+  }
 
   readonly property var barIdentity: hostWidget || root
   readonly property color foreground: bar ? bar.foreground : Color.foreground
@@ -47,6 +59,8 @@ Panel {
   }
 
   onFilterChanged: {
+    editingId = ""
+    cancelDrag()
     searchQuery = ""
     if (addField) addField.text = ""
     syncVisible()
@@ -82,9 +96,90 @@ Panel {
         if (String(visibleModel.get(k).id) === rows[i].id) { found = k; break }
       }
       if (found < 0) visibleModel.insert(i, rowDict(rows[i]))
-      else if (found !== i) visibleModel.move(found, i, 1)
+      else {
+        if (found !== i) visibleModel.move(found, i, 1)
+        visibleModel.set(i, rowDict(rows[i]))
+      }
     }
     clampSelection()
+  }
+
+  function editItem(id, value) {
+    var text = clipText(value)
+    if (!text) return false
+    var archived = filter === "done"
+    var next = (archived ? history : items).slice()
+    for (var i = 0; i < next.length; i++) {
+      if (next[i].id !== id) continue
+      var edited = rowDict(next[i])
+      edited.text = text
+      next[i] = edited
+      // Clear before a search-filtered delegate can disappear.
+      editingId = ""
+      if (archived) history = next
+      else items = next
+      syncVisible()
+      persist()
+      return true
+    }
+    return false
+  }
+
+  function updateDrag(id, y) {
+    if (filter !== "open") return
+    dragId = id
+    dragPointerY = y
+    dragSlot = rowRepeater.count
+    for (var i = 0; i < rowRepeater.count; i++) {
+      var candidate = rowRepeater.itemAt(i)
+      if (candidate && y < candidate.mapToItem(listFlick, 0, candidate.height / 2).y) {
+        dragSlot = i
+        break
+      }
+    }
+  }
+
+  function cancelDrag() {
+    dragId = ""
+    dragSlot = -1
+  }
+
+  function finishDrag(id, point) {
+    if (dragId !== id || filter !== "open" || point.x < 0 || point.x > listFlick.width
+        || point.y < 0 || point.y > listFlick.height) {
+      cancelDrag()
+      return
+    }
+    updateDrag(id, point.y)
+    var from = -1
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].id === id) { from = i; break }
+    }
+    var target = dragSlot > from ? dragSlot - 1 : dragSlot
+    cancelDrag()
+    if (from < 0 || target === from) return
+    var next = items.slice()
+    var moved = next.splice(from, 1)[0]
+    next.splice(target, 0, moved)
+    items = next
+    syncVisible()
+    selectedIndex = target
+    persist()
+  }
+
+  Timer {
+    interval: 30
+    repeat: true
+    running: root.dragId !== ""
+    onTriggered: {
+      var edge = Style.space(24)
+      var step = root.dragPointerY < edge ? -Style.space(8)
+        : root.dragPointerY > listFlick.height - edge ? Style.space(8) : 0
+      if (!step) return
+      listFlick.contentY = Math.max(0, Math.min(
+        Math.max(0, listFlick.contentHeight - listFlick.height), listFlick.contentY + step))
+      root.updateDrag(root.dragId, root.dragPointerY)
+    }
   }
 
   function playSound(kind) {
@@ -484,7 +579,7 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      blocked: addField.activeFocus
+      blocked: addField.activeFocus || root.editingId !== ""
       onCloseRequested: {
         if (root.cursorActive) root.focusField()
         else root.close()
@@ -675,6 +770,7 @@ Panel {
           contentWidth: width
           contentHeight: listBody.implicitHeight
           flickDeceleration: 4000
+          interactive: root.dragId === ""
 
           Column {
             id: listBody

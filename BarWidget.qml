@@ -50,7 +50,7 @@ BarWidget {
     anchors.fill: parent
     bar: root.bar
     text: root.label
-    fixedWidth: root.vertical ? -1 : Style.space(46)
+    fixedWidth: root.vertical ? -1 : Math.max(Style.bar.iconSlot, Math.ceil(labelWidth + Style.space(8)))
     tooltipText: root.openCount === 1 ? "1 open to-do" : root.openCount + " open to-dos"
     onPressed: function(buttonCode) {
       root.toggle()

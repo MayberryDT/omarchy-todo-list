@@ -19,8 +19,32 @@ Item {
   readonly property bool doneTab: filter === "done"
   readonly property string itemId: item && item.id ? String(item.id) : ""
 
-  height: row.implicitHeight + Style.space(8)
+  readonly property bool editing: panel !== null && panel.editingId === itemId
+  readonly property bool dragging: panel !== null && panel.dragId === itemId
+
+  height: Math.max(row.implicitHeight, editing ? editor.implicitHeight : 0) + Style.space(8)
   opacity: 1
+
+  function beginEdit() {
+    if (busy || !panel || !itemId) return
+    panel.cancelDrag()
+    editor.text = String(item.text || "")
+    panel.editingId = itemId
+    Qt.callLater(function() {
+      if (!root.editing) return
+      editor.forceActiveFocus()
+      editor.selectAll()
+    })
+  }
+
+  function finishEdit(save) {
+    var owner = panel
+    var index = appearIndex
+    if (!owner) return
+    if (save && !owner.editItem(itemId, editor.text)) return
+    owner.editingId = ""
+    owner.focusList(index)
+  }
 
   function activate() {
     if (root.busy) return
@@ -130,15 +154,44 @@ Item {
     id: hover
     anchors.fill: parent
     hoverEnabled: true
-    acceptedButtons: Qt.NoButton
+    acceptedButtons: Qt.LeftButton
+    enabled: !root.busy && !root.editing
+    preventStealing: true
+    cursorShape: root.dragging ? Qt.ClosedHandCursor : Qt.PointingHandCursor
+    property real pressY: 0
+    property bool moved: false
+    onPressed: function(mouse) {
+      moved = false
+      pressY = mapToItem(root.panel.reorderViewport, mouse.x, mouse.y).y
+      root.panel.focusList(root.appearIndex)
+    }
+    onPositionChanged: function(mouse) {
+      if (!pressed || root.doneTab) return
+      var point = mapToItem(root.panel.reorderViewport, mouse.x, mouse.y)
+      if (!moved && Math.abs(point.y - pressY) < Style.space(8)) return
+      moved = true
+      root.panel.updateDrag(root.itemId, point.y)
+    }
+    onReleased: function(mouse) {
+      if (moved)
+        root.panel.finishDrag(root.itemId, mapToItem(root.panel.reorderViewport, mouse.x, mouse.y))
+      else if (containsMouse) root.activate()
+      moved = false
+    }
+    onCanceled: {
+      moved = false
+      if (root.dragging) root.panel.cancelDrag()
+    }
     onContainsMouseChanged: {
-      if (containsMouse && root.panel && typeof root.panel.selectIndex === "function")
+      if (containsMouse && root.panel && root.panel.dragId === "" && typeof root.panel.selectIndex === "function")
         root.panel.selectIndex(root.appearIndex)
     }
   }
 
   Row {
     id: row
+    opacity: root.editing ? 0 : root.dragging ? 0.5 : 1
+    enabled: !root.editing
     anchors.left: parent.left
     anchors.right: parent.right
     anchors.verticalCenter: parent.verticalCenter
@@ -149,14 +202,17 @@ Item {
     Item {
       id: checkMark
       width: checkText.implicitWidth
-      height: Math.max(checkText.implicitHeight, Style.font.body)
-      anchors.verticalCenter: parent.verticalCenter
+      height: checkText.implicitHeight
+      // Align glyph baselines, not the unequal fallback-font line boxes.
+      baselineOffset: checkText.baselineOffset
+      anchors.baseline: labelText.baseline
       scale: 1
       transformOrigin: Item.Center
 
       Text {
         id: checkText
-        anchors.centerIn: parent
+        anchors.top: parent.top
+        anchors.horizontalCenter: parent.horizontalCenter
         text: root.doneNow || root.doneTab ? "󰄲" : "󰄱"
         textFormat: Text.PlainText
         color: root.busy && root.pendingAction === "complete"
@@ -188,13 +244,6 @@ Item {
       wrapMode: Text.Wrap
       anchors.verticalCenter: parent.verticalCenter
       Behavior on color { ColorAnimation { duration: 140 } }
-
-      MouseArea {
-        anchors.fill: parent
-        enabled: !root.busy
-        cursorShape: Qt.PointingHandCursor
-        onClicked: root.activate()
-      }
     }
 
     Text {
@@ -205,7 +254,7 @@ Item {
       color: root.mutedColor
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
-      anchors.verticalCenter: parent.verticalCenter
+      anchors.baseline: labelText.baseline
     }
 
     Text {
@@ -215,7 +264,7 @@ Item {
       color: root.mutedColor
       font.family: root.fontFamily
       font.pixelSize: Style.font.body
-      anchors.verticalCenter: parent.verticalCenter
+      anchors.baseline: labelText.baseline
       opacity: (hover.containsMouse || root.selected) && !root.busy ? 1 : 0
       Behavior on opacity { NumberAnimation { duration: 120 } }
 
@@ -228,4 +277,57 @@ Item {
       }
     }
   }
+
+  // A right-button-only overlay leaves checkbox/delete left clicks intact.
+  MouseArea {
+    anchors.fill: parent
+    z: 1
+    acceptedButtons: Qt.RightButton
+    enabled: !root.busy && !root.editing
+    onClicked: root.beginEdit()
+  }
+
+  TextField {
+    id: editor
+    z: 2
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.verticalCenter: parent.verticalCenter
+    anchors.margins: Style.space(4)
+    visible: root.editing
+    enabled: visible
+    foreground: root.foreground
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.bodySmall
+    verticalPadding: Style.space(4)
+    maximumLength: root.panel ? root.panel.textCap : 500
+    onAccepted: root.finishEdit(true)
+    Keys.onEscapePressed: function(event) {
+      root.finishEdit(false)
+      event.accepted = true
+    }
+    onActiveFocusChanged: {
+      // Clicking elsewhere cancels; only Enter commits the edit.
+      if (!activeFocus && root.editing) root.panel.editingId = ""
+    }
+  }
+
+  Rectangle {
+    anchors.left: parent.left
+    anchors.right: parent.right
+    height: Style.space(2)
+    color: Color.accent
+    visible: root.panel !== null && root.panel.dragSlot === root.appearIndex
+    y: -height / 2
+  }
+  Rectangle {
+    anchors.left: parent.left
+    anchors.right: parent.right
+    height: Style.space(2)
+    color: Color.accent
+    visible: root.panel !== null && root.appearIndex === root.panel.openCount - 1
+      && root.panel.dragSlot === root.panel.openCount
+    y: parent.height - height / 2
+  }
+
 }
